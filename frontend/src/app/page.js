@@ -70,6 +70,17 @@ export default function Home() {
     } catch (err) { setMsg(err.message); }
   };
 
+  const logout = () => {
+    setToken('');
+    setUsername('');
+    setPassword('');
+    setMsg('Logged out successfully.');
+    setSnapshot(null);
+    setTeams([]);
+    setPendingUsers([]);
+    setView('login');
+  };
+
   const fetchAdminData = async () => {
     try {
       const pUsers = await api('/admin/users/pending');
@@ -196,7 +207,7 @@ export default function Home() {
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded shadow-sm border gap-4">
             <h2 className="text-xl md:text-2xl font-bold text-red-600">Superadmin Control Panel</h2>
-            <button className="text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 w-full sm:w-auto rounded font-medium border" onClick={() => { setToken(''); setView('login'); }}>Logout</button>
+            <button className="text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 w-full sm:w-auto rounded font-medium border" onClick={logout}>Logout</button>
           </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -252,7 +263,7 @@ export default function Home() {
             <h2 className="text-xl md:text-2xl font-bold text-purple-700">Coach Workspace</h2>
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch sm:items-center w-full sm:w-auto">
               <span className="text-xs sm:text-sm font-mono bg-purple-50 text-purple-700 px-3 py-2 sm:py-1 rounded-full border border-purple-200 text-center">Role: {role}</span>
-              <button className="text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 sm:py-1 rounded font-medium border w-full sm:w-auto" onClick={() => { setToken(''); setView('login'); }}>Logout</button>
+              <button className="text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 sm:py-1 rounded font-medium border w-full sm:w-auto" onClick={logout}>Logout</button>
             </div>
           </div>
 
