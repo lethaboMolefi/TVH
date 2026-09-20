@@ -14,6 +14,7 @@ export default function Home() {
 
   // Admin state
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
   const [apiKey, setApiKey] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
   const [interval, setReportingInterval] = useState(24);
@@ -88,6 +89,8 @@ export default function Home() {
       const settings = await api('/admin/settings');
       setHasApiKey(settings.has_api_key);
       setReportingInterval(settings.reporting_interval_hours);
+      const users = await api('/users');
+      setAllUsers(users);
     } catch (err) { console.error(err); }
   };
 
@@ -252,6 +255,80 @@ export default function Home() {
 
               <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded font-bold transition text-sm md:text-base" onClick={updateSettings}>Save Configuration</button>
             </div>
+
+            {/* Create Team UI */}
+            <div className="bg-white p-4 md:p-6 rounded shadow-sm border lg:col-span-2">
+              <h3 className="font-bold text-lg mb-4">Create New Team</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Team Name</label>
+                  <input id="admin-team-name" className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g. Data Wizards" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Assign Global Coach</label>
+                  <select id="admin-team-coach" className="w-full border p-2 rounded text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500">
+                    <option value="">-- Select Coach --</option>
+                    {allUsers.filter(u => u.system_role === 'COACH').map(c => (
+                      <option key={c.id} value={c.id}>{c.first_name} {c.last_name} ({c.username})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-4 mb-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Project Idea Title</label>
+                  <input id="admin-idea-title" className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g. Smart Traffic System" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Problem Chosen</label>
+                  <textarea id="admin-idea-problem" className="w-full border p-2 rounded text-sm min-h-[80px] focus:ring-2 focus:ring-blue-500" placeholder="Describe the problem they are solving..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Proposed Solution</label>
+                  <textarea id="admin-idea-solution" className="w-full border p-2 rounded text-sm min-h-[80px] focus:ring-2 focus:ring-blue-500" placeholder="Describe how they propose to solve it..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">PowerPoint / Presentation Link</label>
+                  <input id="admin-idea-link" className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" placeholder="https://docs.google.com/presentation/..." />
+                </div>
+              </div>
+              <button className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold transition w-full md:w-auto"
+                onClick={async () => {
+                  const name = document.getElementById('admin-team-name').value;
+                  const coach_id = document.getElementById('admin-team-coach').value;
+                  const title = document.getElementById('admin-idea-title').value;
+                  const problem = document.getElementById('admin-idea-problem').value;
+                  const solution = document.getElementById('admin-idea-solution').value;
+                  const link = document.getElementById('admin-idea-link').value;
+                  
+                  if (!name || !coach_id || !title || !problem || !solution) {
+                    return setMsg("Please fill in all required team and idea fields.");
+                  }
+                  
+                  try {
+                    await api('/teams', {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        name,
+                        coach_id,
+                        idea: { title, problem_statement: problem, proposed_solution: solution, presentation_link: link || null }
+                      })
+                    });
+                    setMsg("Team and idea created successfully!");
+                    document.getElementById('admin-team-name').value = '';
+                    document.getElementById('admin-idea-title').value = '';
+                    document.getElementById('admin-idea-problem').value = '';
+                    document.getElementById('admin-idea-solution').value = '';
+                    document.getElementById('admin-idea-link').value = '';
+                  } catch (e) {
+                    setMsg(e.message);
+                  }
+                }}
+              >
+                Create Team & Idea
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -306,35 +383,63 @@ export default function Home() {
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                       <div>
                         <h3 className="text-2xl md:text-3xl font-extrabold text-gray-900">{snapshot.team.name}</h3>
-                        {snapshot.team.idea && <p className="text-blue-600 font-medium mt-1 text-sm md:text-base">Idea: {snapshot.team.idea.title}</p>}
                       </div>
                       <button onClick={generateInsight} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition flex items-center justify-center gap-2">
                         ✨ Analyze Team
                       </button>
                     </div>
 
+                    {/* Idea Section */}
+                    {snapshot.team.idea && (
+                      <div className="bg-white p-4 rounded shadow-sm border mb-6 border-blue-200">
+                        <h3 className="font-bold text-lg text-blue-800 mb-2">Project Idea: {snapshot.team.idea.title}</h3>
+                        <div className="mt-2">
+                          <p className="font-semibold text-sm text-gray-700">Problem Chosen:</p>
+                          <p className="text-gray-600 mt-1 whitespace-pre-wrap text-sm">{snapshot.team.idea.problem_statement}</p>
+                        </div>
+                        <div className="mt-3 border-t pt-2 border-blue-100">
+                          <p className="font-semibold text-sm text-gray-700">Proposed Solution:</p>
+                          <p className="text-gray-600 mt-1 whitespace-pre-wrap text-sm">{snapshot.team.idea.proposed_solution}</p>
+                        </div>
+                        {snapshot.team.idea.presentation_link && (
+                          <div className="mt-3 border-t pt-2 border-blue-100">
+                            <p className="font-semibold text-sm text-gray-700">Presentation:</p>
+                            <a href={snapshot.team.idea.presentation_link} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm break-all">
+                              {snapshot.team.idea.presentation_link}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Manage Team Members (Dedicated Coach only) */}
                     {role === 'DEDICATED_COACH' && (
                       <div className="mt-6 pt-4 border-t border-gray-100">
                         <h4 className="font-bold text-sm text-gray-700 mb-3">Add Team Member</h4>
-                        <div className="flex flex-col sm:flex-row gap-2 items-center">
-                          <input id="new-member-first" className="border p-2 rounded text-sm w-full" placeholder="First Name" />
-                          <input id="new-member-last" className="border p-2 rounded text-sm w-full" placeholder="Last Name" />
+                        <div className="flex flex-col sm:flex-row gap-2 items-center flex-wrap">
+                          <input id="new-member-first" className="border p-2 rounded text-sm w-full sm:w-[48%]" placeholder="First Name" />
+                          <input id="new-member-last" className="border p-2 rounded text-sm w-full sm:w-[48%]" placeholder="Last Name" />
+                          <input id="new-member-username" className="border p-2 rounded text-sm w-full sm:w-[48%]" placeholder="Username" />
+                          <input id="new-member-password" type="password" className="border p-2 rounded text-sm w-full sm:w-[48%]" placeholder="Temp Password" />
                           <input id="new-member-role" className="border p-2 rounded text-sm w-full" placeholder="Role (e.g. Designer)" />
                           <button 
-                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-bold w-full sm:w-auto shrink-0 transition"
+                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-bold w-full transition mt-2"
                             onClick={async () => {
                               const first = document.getElementById('new-member-first').value;
                               const last = document.getElementById('new-member-last').value;
+                              const username = document.getElementById('new-member-username').value;
+                              const password = document.getElementById('new-member-password').value;
                               const teamRole = document.getElementById('new-member-role').value;
-                              if (!first || !last || !teamRole) return setMsg("Please fill in all member fields.");
+                              if (!first || !last || !teamRole || !username || !password) return setMsg("Please fill in all member fields.");
                               try {
                                 await api(`/teams/${snapshot.team.id}/participants`, {
                                   method: 'POST',
-                                  body: JSON.stringify({ first_name: first, last_name: last, team_role: teamRole })
+                                  body: JSON.stringify({ first_name: first, last_name: last, team_role: teamRole, username, password })
                                 });
                                 document.getElementById('new-member-first').value = '';
                                 document.getElementById('new-member-last').value = '';
+                                document.getElementById('new-member-username').value = '';
+                                document.getElementById('new-member-password').value = '';
                                 document.getElementById('new-member-role').value = '';
                                 fetchSnapshot(snapshot.team.id);
                               } catch (e) { setMsg(e.message); }

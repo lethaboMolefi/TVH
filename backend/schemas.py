@@ -13,6 +13,8 @@ class UserCreate(BaseModel):
     system_role: UserRole
 
 class ParticipantCreate(BaseModel):
+    username: str
+    password: str
     first_name: str
     last_name: str
     team_role: str
@@ -38,14 +40,16 @@ class PasswordChangeRequest(BaseModel):
 # Ideas
 class IdeaCreate(BaseModel):
     title: str
-    description: str
-    tech_requirements: Optional[str] = None
+    problem_statement: str
+    proposed_solution: str
+    presentation_link: Optional[str] = None
 
 class IdeaResponse(BaseModel):
     id: UUID
     title: str
-    description: str
-    tech_requirements: Optional[str]
+    problem_statement: str
+    proposed_solution: str
+    presentation_link: Optional[str]
     created_by: UUID
     
     class Config:
@@ -55,6 +59,7 @@ class IdeaResponse(BaseModel):
 class TeamCreate(BaseModel):
     name: str
     coach_id: UUID
+    idea: IdeaCreate
 
 class TeamResponse(BaseModel):
     id: UUID

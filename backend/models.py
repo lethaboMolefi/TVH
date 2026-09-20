@@ -39,8 +39,9 @@ class Idea(Base):
     __tablename__ = "ideas"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String(255), nullable=False)
-    description = Column(Text, nullable=False)
-    tech_requirements = Column(Text, nullable=True)
+    problem_statement = Column(Text, nullable=False)
+    proposed_solution = Column(Text, nullable=False)
+    presentation_link = Column(String(1024), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     
     team = relationship("Team", back_populates="idea", uselist=False)

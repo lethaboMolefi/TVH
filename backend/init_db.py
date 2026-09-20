@@ -10,9 +10,11 @@ def init_db():
             from sqlalchemy import inspect, text
             inspector = inspect(engine)
             if 'users' in inspector.get_table_names():
-                columns = [c['name'] for c in inspector.get_columns('users')]
-                if 'username' not in columns:
-                    print("Old schema detected (missing 'username' column). Dropping all tables to reset...")
+                user_cols = [c['name'] for c in inspector.get_columns('users')]
+                idea_cols = [c['name'] for c in inspector.get_columns('ideas')] if 'ideas' in inspector.get_table_names() else []
+                
+                if 'username' not in user_cols or 'problem_statement' not in idea_cols:
+                    print("Old schema detected. Dropping all tables to reset...")
                     with engine.begin() as conn:
                         conn.execute(text("DROP TABLE IF EXISTS users, ideas, teams, progress_updates, notes, system_settings, ai_insights CASCADE;"))
                     

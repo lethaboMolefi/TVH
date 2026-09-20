@@ -85,23 +85,7 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == req.username).first()
     if not user or user.hashed_password != req.password + "_hashed":
-        given_str = f"Given: Username '{req.username}', Password '{req.password}'"
-        
-        if not user:
-            reason = f"Why it failed: The username '{req.username}' does not exist in the database."
-            admin_user = db.query(User).filter(User.is_active == True, User.system_role == UserRole.ADMIN).first()
-            if admin_user:
-                raw_password = admin_user.hashed_password.replace("_hashed", "")
-                right_str = f"Right: Try Username '{admin_user.username}', Password '{raw_password}'"
-            else:
-                right_str = "Right: N/A (no users available)"
-        else:
-            reason = "Why it failed: The password provided is incorrect."
-            raw_password = user.hashed_password.replace("_hashed", "")
-            right_str = f"Right: Username '{user.username}', Password '{raw_password}'"
-            
-        full_message = f"Invalid credentials. | {given_str} | {right_str} | {reason}"
-        raise HTTPException(status_code=401, detail=full_message)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account pending approval or disabled")
     return {
@@ -209,8 +193,15 @@ def get_ideas(db: Session = Depends(get_db)):
     return db.query(Idea).all()
 
 @app.post("/api/v1/teams", response_model=schemas.TeamResponse)
-def create_team(team: schemas.TeamCreate, db: Session = Depends(get_db)):
-    db_team = Team(**team.model_dump())
+def create_team(team_req: schemas.TeamCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.system_role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only Admins can create teams")
+        
+    db_idea = Idea(**team_req.idea.model_dump(), created_by=current_user.id)
+    db.add(db_idea)
+    db.flush() # get idea id
+    
+    db_team = Team(name=team_req.name, coach_id=team_req.coach_id, idea_id=db_idea.id)
     db.add(db_team)
     db.commit()
     db.refresh(db_team)
@@ -227,14 +218,17 @@ def add_participant(team_id: UUID, participant: schemas.ParticipantCreate, curre
         if current_user.system_role != UserRole.DEDICATED_COACH or current_user.team_id != team_id:
             raise HTTPException(status_code=403, detail="Not authorized to add members to this team")
     
-    import uuid
-    # Create a dummy user for the participant
+    # Check if username exists
+    if db.query(User).filter(User.username == participant.username).first():
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    # Create the user for the participant
     db_user = User(
-        username=f"participant_{uuid.uuid4().hex[:8]}",
-        hashed_password="dummy_password",
+        username=participant.username,
+        hashed_password=participant.password + "_hashed",
         system_role=UserRole.PARTICIPANT,
         is_active=True,
-        requires_password_change=False,
+        requires_password_change=True,
         first_name=participant.first_name,
         last_name=participant.last_name,
         team_id=team_id,
