@@ -22,6 +22,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def on_startup():
+    from database import engine
+    from sqlalchemy import text
+    try:
+        with engine.execution_options(isolation_level="AUTOCOMMIT").connect() as conn:
+            conn.execute(text("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'DEDICATED_COACH'"))
+            conn.execute(text("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'PARTICIPANT'"))
+    except Exception as e:
+        print(f"Startup DB patch error (ignored): {e}")
+
 class LoginRequest(BaseModel):
     username: str
     password: str

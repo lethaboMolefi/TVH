@@ -1,6 +1,6 @@
-fastapi==0.103.2
-uvicorn==0.23.2
-SQLAlchemy==2.0.21
-psycopg2-binary==2.9.9
-pydantic[email]==2.4.2
+fastapi
+uvicorn
+SQLAlchemy
+psycopg2-binary
+pydantic[email]
 openai
