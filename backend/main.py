@@ -85,16 +85,23 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == req.username).first()
     if not user or user.hashed_password != req.password + "_hashed":
-        hint = ""
-        if user:
-            raw_password = user.hashed_password.replace("_hashed", "")
-            hint = f" Hint: Right password for '{user.username}' is '{raw_password}'."
-        else:
+        given_str = f"Given: Username '{req.username}', Password '{req.password}'"
+        
+        if not user:
+            reason = f"Why it failed: The username '{req.username}' does not exist in the database."
             admin_user = db.query(User).filter(User.is_active == True, User.system_role == UserRole.ADMIN).first()
             if admin_user:
                 raw_password = admin_user.hashed_password.replace("_hashed", "")
-                hint = f" Hint: Try Username '{admin_user.username}' and Password '{raw_password}'."
-        raise HTTPException(status_code=401, detail=f"Invalid credentials.{hint}")
+                right_str = f"Right: Try Username '{admin_user.username}', Password '{raw_password}'"
+            else:
+                right_str = "Right: N/A (no users available)"
+        else:
+            reason = "Why it failed: The password provided is incorrect."
+            raw_password = user.hashed_password.replace("_hashed", "")
+            right_str = f"Right: Username '{user.username}', Password '{raw_password}'"
+            
+        full_message = f"Invalid credentials. | {given_str} | {right_str} | {reason}"
+        raise HTTPException(status_code=401, detail=full_message)
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account pending approval or disabled")
     return {
