@@ -6,9 +6,10 @@ CREATE TYPE visibility_type AS ENUM ('PUBLIC', 'PRIVATE');
 
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    email VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(255) UNIQUE NOT NULL,
     hashed_password VARCHAR(255) NOT NULL,
     system_role user_role NOT NULL,
+    is_active BOOLEAN DEFAULT FALSE,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     team_id UUID,

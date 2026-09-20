@@ -26,6 +26,6 @@ EXPOSE 8000
 # Set the working directory to backend to run the scripts
 WORKDIR /app/backend
 
-# Run the DB init script and then start the Uvicorn server
+# Run the DB init script, seed script, and then start the Uvicorn server
 # Uses the PORT environment variable if available (required for Render)
-CMD ["sh", "-c", "python init_db.py && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "python init_db.py && python seed.py && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

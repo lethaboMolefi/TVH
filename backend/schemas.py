@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
@@ -6,23 +6,34 @@ from models import UserRole, UpdateType, VisibilityType
 
 # Users
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: str
     password: str
     first_name: str
     last_name: str
     system_role: UserRole
 
+class ParticipantCreate(BaseModel):
+    first_name: str
+    last_name: str
+    team_role: str
+
 class UserResponse(BaseModel):
     id: UUID
-    email: EmailStr
+    username: str
     first_name: str
     last_name: str
     system_role: UserRole
+    is_active: bool
+    requires_password_change: bool
     team_id: Optional[UUID] = None
     team_role: Optional[str] = None
     
     class Config:
         from_attributes = True
+
+class PasswordChangeRequest(BaseModel):
+    old_password: str
+    new_password: str
 
 # Ideas
 class IdeaCreate(BaseModel):
@@ -75,6 +86,7 @@ class ProgressUpdateResponse(BaseModel):
 # Notes
 class NoteCreate(BaseModel):
     team_id: Optional[UUID] = None
+    target_user_id: Optional[UUID] = None
     progress_update_id: Optional[UUID] = None
     content: str
     visibility: VisibilityType
@@ -83,9 +95,26 @@ class NoteResponse(BaseModel):
     id: UUID
     author_id: UUID
     team_id: Optional[UUID]
+    target_user_id: Optional[UUID]
     progress_update_id: Optional[UUID]
     content: str
     visibility: VisibilityType
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# System Settings
+class SystemSettingsUpdate(BaseModel):
+    openai_api_key: Optional[str] = None
+    reporting_interval_hours: Optional[int] = None
+
+class SystemSettingsResponse(BaseModel):
+    has_api_key: bool
+    reporting_interval_hours: int
+
+class AIInsightResponse(BaseModel):
+    content: str
     created_at: datetime
     
     class Config:
@@ -109,3 +138,4 @@ class TeamSnapshotResponse(BaseModel):
     team_milestones: List[ProgressUpdateResponse]
     individual_updates: List[ProgressUpdateResponse]
     notes: List[NoteResponse]
+    ai_insight: Optional[AIInsightResponse] = None

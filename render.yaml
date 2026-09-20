@@ -16,3 +16,17 @@ services:
         fromDatabase:
           name: hackathon-db
           property: connectionString
+
+  - type: web
+    name: hackathon-frontend
+    env: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: hackathon-api
+          envVarKey: RENDER_EXTERNAL_URL
