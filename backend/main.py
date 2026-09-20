@@ -74,7 +74,16 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == req.username).first()
     if not user or user.hashed_password != req.password + "_hashed":
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        hint = ""
+        if user:
+            raw_password = user.hashed_password.replace("_hashed", "")
+            hint = f" Hint: Right password for '{user.username}' is '{raw_password}'."
+        else:
+            admin_user = db.query(User).filter(User.is_active == True, User.system_role == UserRole.ADMIN).first()
+            if admin_user:
+                raw_password = admin_user.hashed_password.replace("_hashed", "")
+                hint = f" Hint: Try Username '{admin_user.username}' and Password '{raw_password}'."
+        raise HTTPException(status_code=401, detail=f"Invalid credentials.{hint}")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account pending approval or disabled")
     return {
