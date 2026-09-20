@@ -28,7 +28,7 @@ export default function Home() {
   const [noteVisibility, setNoteVisibility] = useState('PUBLIC');
   const [noteTarget, setNoteTarget] = useState(''); // '' for team, or user_id for individual
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://hackathon-api-ufen.onrender.com/api/v1';
 
   const api = async (path, opts = {}) => {
     const headers = { 'Content-Type': 'application/json' };
