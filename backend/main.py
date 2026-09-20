@@ -1,136 +1,162 @@
 from fastapi import FastAPI, Depends, HTTPException, Header
-from pydantic import BaseModel, UUID4
-from typing import List, Optional
+from sqlalchemy.orm import Session
+from typing import List
+from uuid import UUID
 from datetime import datetime
-import os
+
+from database import get_db
+from models import User, Idea, Team, ProgressUpdate, Note, VisibilityType, UpdateType
+import schemas
 
 app = FastAPI(title="Hackathon Coach Management System API")
 
-# --- Schemas ---
-
-class IdeaSchema(BaseModel):
-    id: UUID4
-    title: str
-    description: str
-    tech_requirements: Optional[str]
-
-class MemberSchema(BaseModel):
-    id: UUID4
-    name: str
-    team_role: Optional[str]
-
-class TeamSchema(BaseModel):
-    id: UUID4
-    name: str
-    coach_id: UUID4
-    idea: Optional[IdeaSchema]
-    members: List[MemberSchema]
-
-class ProgressUpdateSchema(BaseModel):
-    id: UUID4
-    user_id: Optional[UUID4]
-    user_name: Optional[str]
-    content: str
-    created_at: datetime
-
-class NoteSchema(BaseModel):
-    id: UUID4
-    author_id: UUID4
-    author_name: str
-    content: str
-    visibility: str
-    created_at: datetime
-    related_entity: str
-
-class SnapshotProgressSchema(BaseModel):
-    team_milestones: List[ProgressUpdateSchema]
-    individual_updates: List[ProgressUpdateSchema]
-
-class TeamSnapshotResponse(BaseModel):
-    team: TeamSchema
-    progress: SnapshotProgressSchema
-    notes: List[NoteSchema]
-
-
-# --- Dependencies ---
-def get_current_user_id(authorization: str = Header(None)):
+# --- Authentication Mock ---
+def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)):
     """
-    Mock dependency to extract user ID from JWT token.
-    In a real app, this would decode the JWT and fetch the user.
+    MOCK AUTHENTICATION: 
+    For development, pass a user's UUID in the 'Authorization' header to act as that user.
+    Example: `Authorization: <user_uuid>`
     """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid token")
-    # Mocking: returning a static UUID for demonstration
-    return "00000000-0000-0000-0000-000000000000"
-
-# --- Endpoints ---
-
-@app.get("/api/v1/teams/{team_id}/snapshot", response_model=TeamSnapshotResponse)
-def get_team_snapshot(team_id: UUID4, current_user_id: str = Depends(get_current_user_id)):
-    """
-    Fetch a complete snapshot of a team's current state.
-    Includes:
-    - Team details and selected Idea
-    - Members and their roles
-    - Dual-track progress updates (Team & Individual)
-    - Public notes and the requesting coach's private notes
-    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization Header (pass user UUID)")
     
-    # In a real implementation, we would query the database using SQLAlchemy here.
-    # e.g., session.query(Team).filter(Team.id == team_id).first()
+    user_id = authorization.replace("Bearer ", "").strip()
+    try:
+        user = db.query(User).filter(User.id == UUID(user_id)).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format in Authorization header")
+
+# --- Users ---
+@app.post("/api/v1/users", response_model=schemas.UserResponse)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    # Mock password hashing
+    fake_hashed_password = user.password + "_hashed"
+    db_user = User(
+        email=user.email,
+        hashed_password=fake_hashed_password,
+        system_role=user.system_role,
+        first_name=user.first_name,
+        last_name=user.last_name
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@app.get("/api/v1/users", response_model=List[schemas.UserResponse])
+def get_users(db: Session = Depends(get_db)):
+    return db.query(User).all()
+
+# --- Ideas ---
+@app.post("/api/v1/ideas", response_model=schemas.IdeaResponse)
+def create_idea(idea: schemas.IdeaCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db_idea = Idea(**idea.model_dump(), created_by=current_user.id)
+    db.add(db_idea)
+    db.commit()
+    db.refresh(db_idea)
+    return db_idea
+
+@app.get("/api/v1/ideas", response_model=List[schemas.IdeaResponse])
+def get_ideas(db: Session = Depends(get_db)):
+    return db.query(Idea).all()
+
+# --- Teams ---
+@app.post("/api/v1/teams", response_model=schemas.TeamResponse)
+def create_team(team: schemas.TeamCreate, db: Session = Depends(get_db)):
+    db_team = Team(**team.model_dump())
+    db.add(db_team)
+    db.commit()
+    db.refresh(db_team)
+    return db_team
+
+@app.post("/api/v1/teams/{team_id}/members/{user_id}")
+def add_member_to_team(team_id: UUID, user_id: UUID, team_role: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.team_id = team_id
+    user.team_role = team_role
+    db.commit()
+    return {"message": "User added to team successfully", "user_id": user_id, "team_id": team_id}
+
+@app.post("/api/v1/teams/{team_id}/idea/{idea_id}")
+def assign_idea_to_team(team_id: UUID, idea_id: UUID, db: Session = Depends(get_db)):
+    team = db.query(Team).filter(Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    team.idea_id = idea_id
+    db.commit()
+    return {"message": "Idea assigned to team successfully"}
+
+# --- Progress Updates ---
+@app.post("/api/v1/progress_updates", response_model=schemas.ProgressUpdateResponse)
+def create_progress_update(update: schemas.ProgressUpdateCreate, db: Session = Depends(get_db)):
+    db_update = ProgressUpdate(**update.model_dump())
+    db.add(db_update)
+    db.commit()
+    db.refresh(db_update)
+    return db_update
+
+# --- Notes ---
+@app.post("/api/v1/notes", response_model=schemas.NoteResponse)
+def create_note(note: schemas.NoteCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not note.team_id and not note.progress_update_id:
+        raise HTTPException(status_code=400, detail="Note must be linked to a team or progress update")
     
-    # Returning mock data mapped to the required structure for demonstration
-    return {
-        "team": {
-            "id": team_id,
-            "name": "Team Alpha",
-            "coach_id": "11111111-1111-1111-1111-111111111111",
-            "idea": {
-                "id": "22222222-2222-2222-2222-222222222222",
-                "title": "Smart City Dashboard",
-                "description": "A dashboard for urban metrics.",
-                "tech_requirements": "React, FastAPI, PostgreSQL"
-            },
-            "members": [
-                {
-                    "id": "33333333-3333-3333-3333-333333333333",
-                    "name": "Alice Developer",
-                    "team_role": "Frontend Developer"
-                }
-            ]
-        },
-        "progress": {
-            "team_milestones": [
-                {
-                    "id": "44444444-4444-4444-4444-444444444444",
-                    "user_id": None,
-                    "user_name": None,
-                    "content": "MVP Built",
-                    "created_at": datetime.utcnow()
-                }
-            ],
-            "individual_updates": [
-                {
-                    "id": "55555555-5555-5555-5555-555555555555",
-                    "user_id": "33333333-3333-3333-3333-333333333333",
-                    "user_name": "Alice Developer",
-                    "content": "Designed Figma wireframes",
-                    "created_at": datetime.utcnow()
-                }
-            ]
-        },
-        "notes": [
-            {
-                "id": "66666666-6666-6666-6666-666666666666",
-                "author_id": current_user_id,
-                "author_name": "Coach Name",
-                "content": "Team is slightly behind on frontend tasks.",
-                "visibility": "PRIVATE",
-                "created_at": datetime.utcnow(),
-                "related_entity": "team"
-            }
-        ]
-    }
+    db_note = Note(**note.model_dump(), author_id=current_user.id)
+    db.add(db_note)
+    db.commit()
+    db.refresh(db_note)
+    return db_note
+
+# --- Coach Snapshot ---
+@app.get("/api/v1/teams/{team_id}/snapshot", response_model=schemas.TeamSnapshotResponse)
+def get_team_snapshot(team_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    team = db.query(Team).filter(Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+        
+    members = db.query(User).filter(User.team_id == team_id).all()
+    idea = db.query(Idea).filter(Idea.id == team.idea_id).first() if team.idea_id else None
+    
+    updates = db.query(ProgressUpdate).filter(ProgressUpdate.team_id == team_id).all()
+    team_milestones = [u for u in updates if u.type == UpdateType.TEAM_MILESTONE]
+    individual_updates = [u for u in updates if u.type == UpdateType.INDIVIDUAL_TASK]
+    
+    # Filter notes: include all public notes for this team/updates, 
+    # but only private notes authored by the current user.
+    all_notes = db.query(Note).filter(
+        (Note.team_id == team_id) | 
+        (Note.progress_update_id.in_([u.id for u in updates] if updates else []))
+    ).all()
+    
+    visible_notes = []
+    for note in all_notes:
+        if note.visibility == VisibilityType.PUBLIC or note.author_id == current_user.id:
+            visible_notes.append(note)
+
+    snapshot_members = [
+        schemas.SnapshotTeamMember(id=m.id, name=f"{m.first_name} {m.last_name}", team_role=m.team_role)
+        for m in members
+    ]
+
+    snapshot_team = schemas.SnapshotTeamInfo(
+        id=team.id,
+        name=team.name,
+        coach_id=team.coach_id,
+        idea=idea,
+        members=snapshot_members
+    )
+    
+    return schemas.TeamSnapshotResponse(
+        team=snapshot_team,
+        team_milestones=team_milestones,
+        individual_updates=individual_updates,
+        notes=visible_notes
+    )
 
 @app.get("/health")
 def health_check():
