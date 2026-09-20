@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
@@ -203,12 +203,54 @@ def create_team(team_req: schemas.TeamCreate, current_user: User = Depends(get_c
     
     db_team = Team(name=team_req.name, coach_id=team_req.coach_id, idea_id=db_idea.id)
     db.add(db_team)
+    db.flush() # get team id
+    
+    # Assign the team_id to the dedicated coach so they have access
+    coach_user = db.query(User).filter(User.id == team_req.coach_id).first()
+    if coach_user:
+        coach_user.team_id = db_team.id
+        
     db.commit()
     db.refresh(db_team)
     return db_team
 
+@app.post("/api/v1/teams/{team_id}/presentation")
+def upload_presentation(team_id: UUID, file: UploadFile = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.system_role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only Admins can upload presentations")
+        
+    team = db.query(Team).filter(Team.id == team_id).first()
+    if not team or not team.idea_id:
+        raise HTTPException(status_code=404, detail="Team or Idea not found")
+        
+    idea = db.query(Idea).filter(Idea.id == team.idea_id).first()
+    
+    import io
+    from pptx import Presentation
+    
+    try:
+        content = file.file.read()
+        prs = Presentation(io.BytesIO(content))
+        text_runs = []
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    text_runs.append(shape.text)
+        
+        extracted_text = "\n".join(text_runs)
+        idea.presentation_text = extracted_text
+        db.commit()
+        
+        return {"message": "Presentation uploaded and parsed successfully", "extracted_length": len(extracted_text)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse PPTX file: {str(e)}")
+
 @app.get("/api/v1/teams", response_model=List[schemas.TeamResponse])
-def get_teams(db: Session = Depends(get_db)):
+def get_teams(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.system_role == UserRole.DEDICATED_COACH:
+        if current_user.team_id:
+            return db.query(Team).filter(Team.id == current_user.team_id).all()
+        return []
     return db.query(Team).all()
 
 @app.post("/api/v1/teams/{team_id}/participants", response_model=schemas.UserResponse)
@@ -280,8 +322,19 @@ def get_team_insights(team_id: UUID, current_user: User = Depends(get_current_us
             return latest_insight
 
     try:
+        team = db.query(Team).filter(Team.id == team_id).first()
+        idea = db.query(Idea).filter(Idea.id == team.idea_id).first() if team else None
+        
         client = OpenAI(api_key=settings.openai_api_key)
-        prompt = f"Review the following notes for team {team_id} and provide actionable insight on how the coach should guide this team/individual:\n"
+        prompt = f"Team: {team.name if team else 'Unknown'}\n"
+        if idea:
+            prompt += f"Project Idea: {idea.title}\n"
+            prompt += f"Problem Statement: {idea.problem_statement}\n"
+            prompt += f"Proposed Solution: {idea.proposed_solution}\n"
+            if idea.presentation_text:
+                prompt += f"Presentation Text Context: {idea.presentation_text}\n"
+        
+        prompt += f"\nReview the following notes for this team and provide actionable insight on how the coach should guide this team/individual:\n"
         for n in notes:
             prompt += f"- Note ({n.visibility}): {n.content}\n"
             
@@ -304,6 +357,9 @@ def get_team_insights(team_id: UUID, current_user: User = Depends(get_current_us
 # --- Coach Snapshot ---
 @app.get("/api/v1/teams/{team_id}/snapshot", response_model=schemas.TeamSnapshotResponse)
 def get_team_snapshot(team_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.system_role == UserRole.DEDICATED_COACH and current_user.team_id != team_id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this team")
+        
     team = db.query(Team).filter(Team.id == team_id).first()
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
@@ -344,15 +400,15 @@ def get_team_snapshot(team_id: UUID, current_user: User = Depends(get_current_us
         members=snapshot_members
     )
     
-    # Try fetching the latest insight to include in snapshot (won't generate a new one)
-    latest_insight = db.query(AIInsight).filter(AIInsight.team_id == team_id).order_by(AIInsight.created_at.desc()).first()
+    # Fetch all insights to show history
+    all_insights = db.query(AIInsight).filter(AIInsight.team_id == team_id).order_by(AIInsight.created_at.desc()).all()
     
     return schemas.TeamSnapshotResponse(
         team=snapshot_team,
         team_milestones=team_milestones,
         individual_updates=individual_updates,
         notes=visible_notes,
-        ai_insight=latest_insight
+        ai_insights=all_insights
     )
 
 @app.get("/health")

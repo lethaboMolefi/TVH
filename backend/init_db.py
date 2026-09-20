@@ -13,7 +13,7 @@ def init_db():
                 user_cols = [c['name'] for c in inspector.get_columns('users')]
                 idea_cols = [c['name'] for c in inspector.get_columns('ideas')] if 'ideas' in inspector.get_table_names() else []
                 
-                if 'username' not in user_cols or 'problem_statement' not in idea_cols:
+                if 'username' not in user_cols or 'problem_statement' not in idea_cols or 'presentation_text' not in idea_cols:
                     print("Old schema detected. Dropping all tables to reset...")
                     with engine.begin() as conn:
                         conn.execute(text("DROP TABLE IF EXISTS users, ideas, teams, progress_updates, notes, system_settings, ai_insights CASCADE;"))

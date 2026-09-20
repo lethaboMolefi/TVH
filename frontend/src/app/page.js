@@ -265,10 +265,10 @@ export default function Home() {
                   <input id="admin-team-name" className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g. Data Wizards" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-1">Assign Global Coach</label>
+                  <label className="block text-sm font-semibold mb-1">Assign Dedicated Coach</label>
                   <select id="admin-team-coach" className="w-full border p-2 rounded text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500">
-                    <option value="">-- Select Coach --</option>
-                    {allUsers.filter(u => u.system_role === 'COACH').map(c => (
+                    <option value="">-- Select Dedicated Coach --</option>
+                    {allUsers.filter(u => u.system_role === 'DEDICATED_COACH').map(c => (
                       <option key={c.id} value={c.id}>{c.first_name} {c.last_name} ({c.username})</option>
                     ))}
                   </select>
@@ -290,7 +290,11 @@ export default function Home() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-1">PowerPoint / Presentation Link</label>
-                  <input id="admin-idea-link" className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" placeholder="https://docs.google.com/presentation/..." />
+                  <input id="admin-idea-link" className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500 mb-2" placeholder="https://docs.google.com/presentation/..." />
+                  
+                  <label className="block text-sm font-semibold mb-1">Upload Presentation (for AI Context)</label>
+                  <input id="admin-idea-file" type="file" accept=".pptx" className="w-full border p-1 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                  <p className="text-xs text-gray-500 mt-1">Upload a .pptx file so the AI coach can read it.</p>
                 </div>
               </div>
               <button className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold transition w-full md:w-auto"
@@ -301,13 +305,14 @@ export default function Home() {
                   const problem = document.getElementById('admin-idea-problem').value;
                   const solution = document.getElementById('admin-idea-solution').value;
                   const link = document.getElementById('admin-idea-link').value;
+                  const fileInput = document.getElementById('admin-idea-file');
                   
                   if (!name || !coach_id || !title || !problem || !solution) {
                     return setMsg("Please fill in all required team and idea fields.");
                   }
                   
                   try {
-                    await api('/teams', {
+                    const data = await api('/teams', {
                       method: 'POST',
                       body: JSON.stringify({
                         name,
@@ -315,12 +320,29 @@ export default function Home() {
                         idea: { title, problem_statement: problem, proposed_solution: solution, presentation_link: link || null }
                       })
                     });
+                    
+                    if (fileInput.files.length > 0) {
+                      const formData = new FormData();
+                      formData.append("file", fileInput.files[0]);
+                      
+                      const uploadRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/teams/${data.id}/presentation`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        body: formData
+                      });
+                      if (!uploadRes.ok) {
+                        const errData = await uploadRes.json();
+                        throw new Error("Team created, but failed to upload PPTX: " + errData.detail);
+                      }
+                    }
+                    
                     setMsg("Team and idea created successfully!");
                     document.getElementById('admin-team-name').value = '';
                     document.getElementById('admin-idea-title').value = '';
                     document.getElementById('admin-idea-problem').value = '';
                     document.getElementById('admin-idea-solution').value = '';
                     document.getElementById('admin-idea-link').value = '';
+                    fileInput.value = '';
                   } catch (e) {
                     setMsg(e.message);
                   }
@@ -412,8 +434,8 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* Manage Team Members (Dedicated Coach only) */}
-                    {role === 'DEDICATED_COACH' && (
+                    {/* Manage Team Members (Dedicated Coach or Admin) */}
+                    {(role === 'DEDICATED_COACH' || role === 'ADMIN') && (
                       <div className="mt-6 pt-4 border-t border-gray-100">
                         <h4 className="font-bold text-sm text-gray-700 mb-3">Add Team Member</h4>
                         <div className="flex flex-col sm:flex-row gap-2 items-center flex-wrap">
@@ -452,13 +474,24 @@ export default function Home() {
                     )}
 
                     {/* AI Insight Display */}
-                    {snapshot.ai_insight && (
-                      <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg shadow-inner">
-                        <h4 className="font-bold text-blue-800 flex items-center gap-2 mb-2 text-sm md:text-base">
-                          <span>🤖</span> AI Coach Insight
-                        </h4>
-                        <p className="text-blue-900 text-sm whitespace-pre-wrap leading-relaxed">{snapshot.ai_insight.content}</p>
-                        <p className="text-xs text-blue-400 mt-2 font-mono">Generated: {new Date(snapshot.ai_insight.created_at).toLocaleString()}</p>
+                    {snapshot.ai_insights && snapshot.ai_insights.length > 0 && (
+                      <div className="mt-8 bg-blue-50 border border-blue-200 rounded p-6 shadow-sm">
+                        <h3 className="font-bold text-lg text-blue-900 mb-4 flex items-center gap-2">
+                          🧠 AI Coaching Insights History
+                        </h3>
+                        <div className="space-y-4">
+                          {snapshot.ai_insights.map((insight, idx) => (
+                            <div key={insight.id} className="bg-white p-4 rounded border border-blue-100 shadow-sm">
+                              {idx === 0 && <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded font-bold mb-2 inline-block">LATEST</span>}
+                              <p className="text-blue-900 text-sm whitespace-pre-wrap leading-relaxed">{insight.content}</p>
+                              <div className="mt-3 text-xs text-blue-400 font-mono border-t pt-2 border-blue-50">
+                                Generated: {new Date(insight.created_at).toLocaleString()}
+                                <br />
+                                <em>Based on project data and notes prior to this timestamp.</em>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

@@ -42,6 +42,7 @@ class Idea(Base):
     problem_statement = Column(Text, nullable=False)
     proposed_solution = Column(Text, nullable=False)
     presentation_link = Column(String(1024), nullable=True)
+    presentation_text = Column(Text, nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     
     team = relationship("Team", back_populates="idea", uselist=False)

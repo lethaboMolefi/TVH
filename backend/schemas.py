@@ -143,4 +143,4 @@ class TeamSnapshotResponse(BaseModel):
     team_milestones: List[ProgressUpdateResponse]
     individual_updates: List[ProgressUpdateResponse]
     notes: List[NoteResponse]
-    ai_insight: Optional[AIInsightResponse] = None
+    ai_insights: List[AIInsightResponse] = []
