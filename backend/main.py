@@ -292,8 +292,8 @@ def create_progress_update(update: schemas.ProgressUpdateCreate, db: Session = D
 
 @app.post("/api/v1/notes", response_model=schemas.NoteResponse)
 def create_note(note: schemas.NoteCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not note.team_id and not note.progress_update_id and not note.target_user_id:
-        raise HTTPException(status_code=400, detail="Note must be linked to a team, individual, or progress update")
+    if not note.team_id and not note.progress_update_id and not note.role_tag:
+        raise HTTPException(status_code=400, detail="Note must be linked to a team, role, or progress update")
     
     db_note = Note(**note.model_dump(), author_id=current_user.id)
     db.add(db_note)
@@ -373,8 +373,7 @@ def get_team_snapshot(team_id: UUID, current_user: User = Depends(get_current_us
     
     all_notes = db.query(Note).filter(
         (Note.team_id == team_id) | 
-        (Note.progress_update_id.in_([u.id for u in updates] if updates else [])) |
-        (Note.target_user_id.in_([m.id for m in members] if members else []))
+        (Note.progress_update_id.in_([u.id for u in updates] if updates else []))
     ).all()
     
     visible_notes = []
@@ -414,3 +413,63 @@ def get_team_snapshot(team_id: UUID, current_user: User = Depends(get_current_us
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+from uuid import UUID
+from database import get_db
+from models import User, Team, Idea, Note, ProgressUpdate, AIInsight, UserRole
+
+def add_delete_endpoints(app: FastAPI):
+    def get_superadmin_local(current_user: User):
+        if current_user.system_role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Superadmin access required")
+        return current_user
+
+    from main import get_current_user
+
+    @app.delete("/api/v1/teams/{team_id}")
+    def delete_team(team_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+        if current_user.system_role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Superadmin access required")
+            
+        team = db.query(Team).filter(Team.id == team_id).first()
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found")
+            
+        # Delete related child records explicitly to avoid FK errors without CASCADE set in DB
+        db.query(Note).filter(Note.team_id == team_id).delete(synchronize_session=False)
+        db.query(ProgressUpdate).filter(ProgressUpdate.team_id == team_id).delete(synchronize_session=False)
+        db.query(AIInsight).filter(AIInsight.team_id == team_id).delete(synchronize_session=False)
+        
+        # Clear coach team_ids
+        coaches = db.query(User).filter(User.team_id == team_id).all()
+        for c in coaches:
+            c.team_id = None
+            
+        # Delete idea
+        if team.idea_id:
+            db.query(Idea).filter(Idea.id == team.idea_id).delete(synchronize_session=False)
+            
+        db.delete(team)
+        db.commit()
+        return {"message": "Team deleted successfully"}
+
+    @app.delete("/api/v1/users/{user_id}")
+    def delete_user(user_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+        if current_user.system_role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Superadmin access required")
+            
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if user.system_role == UserRole.ADMIN:
+            raise HTTPException(status_code=400, detail="Cannot delete superadmin")
+            
+        # Delete notes authored by them
+        db.query(Note).filter(Note.author_id == user_id).delete(synchronize_session=False)
+        
+        # Delete user
+        db.delete(user)
+        db.commit()
+        return {"message": "User deleted successfully"}
+add_delete_endpoints(app)

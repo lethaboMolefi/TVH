@@ -27,7 +27,7 @@ export default function Home() {
   // Note state
   const [noteContent, setNoteContent] = useState('');
   const [noteVisibility, setNoteVisibility] = useState('PUBLIC');
-  const [noteTarget, setNoteTarget] = useState(''); // '' for team, or user_id for individual
+  const [roleTag, setRoleTag] = useState(''); // '' for team, or role name
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://hackathon-api-ufen.onrender.com/api/v1';
 
@@ -91,6 +91,8 @@ export default function Home() {
       setReportingInterval(settings.reporting_interval_hours);
       const users = await api('/users');
       setAllUsers(users);
+      const t = await api('/teams');
+      setTeams(t);
     } catch (err) { console.error(err); }
   };
 
@@ -121,23 +123,24 @@ export default function Home() {
       setMsg('');
       const data = await api(`/teams/${teamId}/snapshot`);
       setSnapshot(data);
-      setNoteTarget('');
+      setRoleTag('');
     } catch (err) { setSnapshot(null); setMsg(err.message); }
   };
 
   const addNote = async () => {
-    if (!snapshot) return;
+    if (!noteContent.trim()) return;
     try {
       const payload = {
         team_id: snapshot.team.id,
         content: noteContent,
         visibility: noteVisibility
       };
-      if (noteTarget) payload.target_user_id = noteTarget;
+      if (roleTag) payload.role_tag = roleTag;
       
       await api('/notes', { method: 'POST', body: JSON.stringify(payload) });
       setNoteContent('');
-      fetchSnapshot(snapshot.team.id); // Refresh
+      setRoleTag('');
+      fetchSnapshot(snapshot.team.id);
     } catch (err) { setMsg(err.message); }
   };
 
@@ -155,6 +158,22 @@ export default function Home() {
     if (view === 'admin') fetchAdminData();
     if (view === 'coach') fetchTeams();
   }, [view]);
+
+  // Real-time updates via polling
+  useEffect(() => {
+    if (!snapshot || !snapshot.team) return;
+    
+    const intervalId = setInterval(() => {
+      // Background fetch without wiping current UI or resetting roleTag state
+      api(`/teams/${snapshot.team.id}/snapshot`)
+        .then(data => {
+          setSnapshot(data);
+        })
+        .catch(console.error);
+    }, 5000);
+    
+    return () => clearInterval(intervalId);
+  }, [snapshot?.team?.id]);
 
   return (
     <main className="p-4 md:p-8 max-w-5xl mx-auto bg-gray-50 min-h-screen text-gray-800 font-sans">
@@ -352,6 +371,53 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          {/* Admin Management Sections */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div className="bg-white p-4 md:p-6 rounded shadow-sm border">
+              <h3 className="font-bold text-lg mb-4 text-red-700">Manage Projects</h3>
+              {teams.length === 0 ? <p className="text-gray-400 text-sm">No teams found.</p> : (
+                <ul className="space-y-3">
+                  {teams.map(t => (
+                    <li key={t.id} className="flex justify-between items-center bg-gray-50 p-3 rounded border">
+                      <span className="font-semibold text-sm">{t.name}</span>
+                      <button onClick={async () => {
+                        if (!confirm(`Delete project ${t.name}?`)) return;
+                        try {
+                          await api(`/teams/${t.id}`, { method: 'DELETE' });
+                          setMsg(`Deleted team ${t.name}`);
+                          fetchAdminData();
+                        } catch (e) { setMsg(e.message); }
+                      }} className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded text-xs font-bold transition">Delete</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="bg-white p-4 md:p-6 rounded shadow-sm border">
+              <h3 className="font-bold text-lg mb-4 text-red-700">Manage Coaches</h3>
+              <ul className="space-y-3">
+                {allUsers.filter(u => u.system_role === 'COACH' || u.system_role === 'DEDICATED_COACH').length === 0 ? <p className="text-gray-400 text-sm">No coaches found.</p> : 
+                  allUsers.filter(u => u.system_role === 'COACH' || u.system_role === 'DEDICATED_COACH').map(u => (
+                  <li key={u.id} className="flex justify-between items-center bg-gray-50 p-3 rounded border">
+                    <div>
+                      <span className="font-semibold text-sm block">{u.first_name} {u.last_name}</span>
+                      <span className="text-xs text-gray-500 font-mono">{u.system_role}</span>
+                    </div>
+                    <button onClick={async () => {
+                      if (!confirm(`Delete coach ${u.username}?`)) return;
+                      try {
+                        await api(`/users/${u.id}`, { method: 'DELETE' });
+                        setMsg(`Deleted coach ${u.username}`);
+                        fetchAdminData();
+                      } catch (e) { setMsg(e.message); }
+                    }} className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded text-xs font-bold transition">Delete</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
         </div>
       )}
 
@@ -435,43 +501,7 @@ export default function Home() {
                     )}
 
                     {/* Manage Team Members (Dedicated Coach or Admin) */}
-                    {(role === 'DEDICATED_COACH' || role === 'ADMIN') && (
-                      <div className="mt-6 pt-4 border-t border-gray-100">
-                        <h4 className="font-bold text-sm text-gray-700 mb-3">Add Team Member</h4>
-                        <div className="flex flex-col sm:flex-row gap-2 items-center flex-wrap">
-                          <input id="new-member-first" className="border p-2 rounded text-sm w-full sm:w-[48%]" placeholder="First Name" />
-                          <input id="new-member-last" className="border p-2 rounded text-sm w-full sm:w-[48%]" placeholder="Last Name" />
-                          <input id="new-member-username" className="border p-2 rounded text-sm w-full sm:w-[48%]" placeholder="Username" />
-                          <input id="new-member-password" type="password" className="border p-2 rounded text-sm w-full sm:w-[48%]" placeholder="Temp Password" />
-                          <input id="new-member-role" className="border p-2 rounded text-sm w-full" placeholder="Role (e.g. Designer)" />
-                          <button 
-                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-bold w-full transition mt-2"
-                            onClick={async () => {
-                              const first = document.getElementById('new-member-first').value;
-                              const last = document.getElementById('new-member-last').value;
-                              const username = document.getElementById('new-member-username').value;
-                              const password = document.getElementById('new-member-password').value;
-                              const teamRole = document.getElementById('new-member-role').value;
-                              if (!first || !last || !teamRole || !username || !password) return setMsg("Please fill in all member fields.");
-                              try {
-                                await api(`/teams/${snapshot.team.id}/participants`, {
-                                  method: 'POST',
-                                  body: JSON.stringify({ first_name: first, last_name: last, team_role: teamRole, username, password })
-                                });
-                                document.getElementById('new-member-first').value = '';
-                                document.getElementById('new-member-last').value = '';
-                                document.getElementById('new-member-username').value = '';
-                                document.getElementById('new-member-password').value = '';
-                                document.getElementById('new-member-role').value = '';
-                                fetchSnapshot(snapshot.team.id);
-                              } catch (e) { setMsg(e.message); }
-                            }}
-                          >
-                            + Add Member
-                          </button>
-                        </div>
-                      </div>
-                    )}
+
 
                     {/* AI Insight Display */}
                     {snapshot.ai_insights && snapshot.ai_insights.length > 0 && (
@@ -501,11 +531,11 @@ export default function Home() {
                     {/* Write Note Section */}
                     <div className="bg-white p-4 md:p-5 rounded shadow-sm border flex flex-col">
                       <h4 className="font-bold text-lg mb-3">Add a Note</h4>
-                      <select className="border p-2 rounded mb-3 bg-gray-50 text-sm font-medium w-full" value={noteTarget} onChange={e => setNoteTarget(e.target.value)}>
-                        <option value="">Target: Entire Team</option>
-                        <optgroup label="Individuals">
-                          {snapshot.team.members.map(m => (
-                            <option key={m.id} value={m.id}>{m.name} ({m.team_role || 'Hacker'})</option>
+                      <select className="border p-2 rounded mb-3 bg-gray-50 text-sm font-medium w-full" value={roleTag} onChange={e => setRoleTag(e.target.value)}>
+                        <option value="">Tag: General Team Note</option>
+                        <optgroup label="Roles">
+                          {["DevOps", "Scrum Master", "BA", "Full Stack Developer", "Backend Developer", "Frontend Developer", "UI/UX Designer", "Enthusiast", "Marketer"].map(r => (
+                            <option key={r} value={r}>{r}</option>
                           ))}
                         </optgroup>
                       </select>
@@ -533,14 +563,13 @@ export default function Home() {
                         <div className="space-y-4">
                           {snapshot.notes.map(n => {
                             const isPrivate = n.visibility === 'PRIVATE';
-                            const targetMember = snapshot.team.members.find(m => m.id === n.target_user_id);
                             return (
                               <div key={n.id} className={`p-3 md:p-4 rounded-lg border text-sm ${isPrivate ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`}>
                                 <div className="flex justify-between items-start mb-2 gap-2 flex-wrap">
                                   <span className={`font-bold text-[10px] md:text-xs px-2 py-0.5 rounded ${isPrivate ? 'bg-orange-200 text-orange-800' : 'bg-green-200 text-green-800'}`}>
                                     {isPrivate ? 'PRIVATE' : 'PUBLIC'}
                                   </span>
-                                  {targetMember && <span className="text-[10px] md:text-xs font-mono text-gray-600 bg-gray-200 px-1.5 py-0.5 rounded break-all">@{targetMember.name}</span>}
+                                  {n.role_tag && <span className="text-[10px] md:text-xs font-mono text-gray-600 bg-gray-200 px-1.5 py-0.5 rounded break-all">#{n.role_tag}</span>}
                                 </div>
                                 <p className="text-gray-800 text-sm whitespace-pre-wrap">{n.content}</p>
                               </div>

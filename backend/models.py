@@ -78,14 +78,13 @@ class Note(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     author_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id"), nullable=True)
-    target_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     progress_update_id = Column(UUID(as_uuid=True), ForeignKey("progress_updates.id"), nullable=True)
+    role_tag = Column(String(50), nullable=True)
     content = Column(Text, nullable=False)
     visibility = Column(Enum(VisibilityType, name="visibility_type", create_type=False), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     author = relationship("User", foreign_keys=[author_id])
-    target_user = relationship("User", foreign_keys=[target_user_id])
     team = relationship("Team", back_populates="notes")
     progress_update = relationship("ProgressUpdate", back_populates="notes")
 

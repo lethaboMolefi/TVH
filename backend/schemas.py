@@ -91,17 +91,17 @@ class ProgressUpdateResponse(BaseModel):
 # Notes
 class NoteCreate(BaseModel):
     team_id: Optional[UUID] = None
-    target_user_id: Optional[UUID] = None
     progress_update_id: Optional[UUID] = None
+    role_tag: Optional[str] = None
     content: str
     visibility: VisibilityType
 
 class NoteResponse(BaseModel):
     id: UUID
     author_id: UUID
-    team_id: Optional[UUID]
-    target_user_id: Optional[UUID]
-    progress_update_id: Optional[UUID]
+    team_id: Optional[UUID] = None
+    progress_update_id: Optional[UUID] = None
+    role_tag: Optional[str] = None
     content: str
     visibility: VisibilityType
     created_at: datetime
